@@ -675,7 +675,7 @@ MediaProfiles::getInstance()
     Mutex::Autolock lock(sLock);
     if (!sIsInitialized) {
         char value[PROPERTY_VALUE_MAX];
-        if (property_get("media.settings.xml", value, NULL) <= 0) {
+        if (property_get("media.settings.foo", value, NULL) <= 0) {
             const char *defaultXmlFile = "/etc/media_profiles.xml";
             FILE *fp = fopen(defaultXmlFile, "r");
             if (fp == NULL) {
