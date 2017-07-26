@@ -170,8 +170,10 @@ struct BufferMeta {
         return buf;
     }
 
-    bool copyToOmx() const {
-        return mCopyToOmx;
+    bool copyingOrSharingToOmx(const OMX_BUFFERHEADERTYPE *header) const {
+        return mCopyToOmx
+                                    // sharing buffer with client
+                || (mMem != NULL && mMem->pointer() == header->pBuffer);
     }
 
     void setGraphicBuffer(const sp<GraphicBuffer> &graphicBuffer) {
@@ -771,6 +773,12 @@ status_t OMXNodeInstance::useBuffer(
         return BAD_VALUE;
     }
 
+    if (!mSailed) {
+        ALOGE("b/35467458");
+        android_errorWriteLog(0x534e4554, "35467458");
+        return BAD_VALUE;
+    }
+
     // metadata buffers are not connected cross process
     BufferMeta *buffer_meta;
     bool isMeta = mMetadataType[portIndex] != kMetadataBufferTypeInvalid;
@@ -783,13 +791,6 @@ status_t OMXNodeInstance::useBuffer(
             return NO_MEMORY;
         }
         memset(data, 0, allottedSize);
-
-        // if we are not connecting the buffers, the sizes must match
-        if (allottedSize != params->size()) {
-            CLOG_ERROR(useBuffer, BAD_VALUE, SIMPLE_BUFFER(portIndex, (size_t)allottedSize, data));
-            delete[] data;
-            return BAD_VALUE;
-        }
 
         buffer_meta = new BufferMeta(
                 params, portIndex, false /* copyToOmx */, false /* copyFromOmx */, data);
@@ -1121,6 +1122,12 @@ status_t OMXNodeInstance::allocateBuffer(
         void **buffer_data) {
     Mutex::Autolock autoLock(mLock);
 
+    if (!mSailed) {
+        ALOGE("b/35467458");
+        android_errorWriteLog(0x534e4554, "35467458");
+        return BAD_VALUE;
+    }
+
     BufferMeta *buffer_meta = new BufferMeta(size, portIndex);
 
     OMX_BUFFERHEADERTYPE *header;
@@ -1159,6 +1166,12 @@ status_t OMXNodeInstance::allocateBufferWithBackup(
         OMX::buffer_id *buffer, OMX_U32 allottedSize, OMX_BOOL crossProcess) {
     Mutex::Autolock autoLock(mLock);
     if (allottedSize > params->size() || portIndex >= NELEM(mNumPortBuffers)) {
+        return BAD_VALUE;
+    }
+
+    if (!mSailed) {
+        ALOGE("b/35467458");
+        android_errorWriteLog(0x534e4554, "35467458");
         return BAD_VALUE;
     }
 
@@ -1283,7 +1296,7 @@ status_t OMXNodeInstance::emptyBuffer(
 
     // convert incoming ANW meta buffers if component is configured for gralloc metadata mode
     // ignore rangeOffset in this case
-    if (buffer_meta->copyToOmx()
+    if (buffer_meta->copyingOrSharingToOmx(header)
             && mMetadataType[kPortIndexInput] == kMetadataBufferTypeGrallocSource
             && backup->capacity() >= sizeof(VideoNativeMetadata)
             && codec->capacity() >= sizeof(VideoGrallocMetadata)
